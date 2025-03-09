@@ -7,10 +7,11 @@ import ActionProvider from '../../config/ActionProvider';
 
 const theme = {
     background: '#f5f8fb',
-    header: '#5856d6',
-    botBubbleColor: '#376B7E',
-    userBubbleColor: '#000000',
+    header: '#dc0b14',
+    botBubbleColor: '#DC3545',
+    userBubbleColor: '#E9ECEF',
     botTextColor: '#ffffff',
+    userTextColor: '#212529',
 };
 
 
