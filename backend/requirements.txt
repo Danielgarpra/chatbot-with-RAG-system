@@ -14,4 +14,6 @@ transformers==4.37.2
 pdfplumber==0.10.3
 pandas==2.2.0
 nltk==3.8.1
-requests-aws4auth==1.2.3 
+requests-aws4auth==1.2.3
+pinecone==6.0.1
+PyPDF2==3.0.1 

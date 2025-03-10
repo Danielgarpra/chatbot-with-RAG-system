@@ -1,5 +1,4 @@
-import pdfplumber
-from sentence_transformers import SentenceTransformer
+import PyPDF2
 import numpy as np
 import cohere
 from typing import List, Tuple
@@ -8,8 +7,7 @@ import logging
 from dotenv import load_dotenv
 import json
 import requests
-from opensearchpy import OpenSearch, RequestsHttpConnection
-from requests_aws4auth import AWS4Auth
+from pinecone import Pinecone, ServerlessSpec
 import glob
 import pandas as pd
 import re
@@ -18,6 +16,7 @@ from nltk.tokenize import sent_tokenize
 import nltk
 from nltk.corpus import stopwords
 import string
+from IPython.display import display
 
 # Download required NLTK data
 try:
@@ -41,19 +40,23 @@ logger = logging.getLogger(__name__)
 
 # Get environment variables
 COHERE_API_KEY = os.getenv('COHERE_API_KEY')
-OPENSEARCH_HOST = os.getenv('OPENSEARCH_HOST')
-OPENSEARCH_USERNAME = os.getenv('OPENSEARCH_USERNAME')
-OPENSEARCH_PASSWORD = os.getenv('OPENSEARCH_PASSWORD')
-INDEX_NAME = "pdf-chunks"
+PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
+PINECONE_ENVIRONMENT = os.getenv('PINECONE_ENVIRONMENT')
+INDEX_NAME = "desafiofinal"
 
-if not all([COHERE_API_KEY, OPENSEARCH_HOST, OPENSEARCH_USERNAME, OPENSEARCH_PASSWORD]):
+if not all([COHERE_API_KEY, PINECONE_API_KEY, PINECONE_ENVIRONMENT]):
     raise ValueError("Missing required environment variables")
 
 try:
+    # Initialize Cohere client
     co = cohere.Client(COHERE_API_KEY)
     logger.info("Cohere client initialized successfully")
+    
+    # Initialize Pinecone with new syntax
+    pc = Pinecone(api_key=PINECONE_API_KEY)
+    logger.info("Pinecone initialized successfully")
 except Exception as e:
-    logger.error(f"Error initializing Cohere client: {e}")
+    logger.error(f"Error initializing clients: {e}")
     raise
 
 def search_thebridge_web(query: str) -> str:
@@ -64,7 +67,7 @@ def search_thebridge_web(query: str) -> str:
     if response.status_code == 200:
         return f"Puedes consultar información en el siguiente enlace: {search_url}"
     else:
-        return ""
+        return "No pude obtener información de la web en este momento."
 
 class TextCleaner:
     """Clase para limpiar y normalizar texto."""
@@ -74,8 +77,8 @@ class TextCleaner:
         self.punctuation = string.punctuation + '¿¡'
         # Patrones comunes en PDFs
         self.pdf_patterns = {
-            'broken_chars': r'f_([a-z]+)',  # Para f_inanciacion, etc.
-            'line_breaks': r'-\s*\n',  # Guiones al final de línea
+            'broken_chars': r'f_([a-z]+)',
+            'line_breaks': r'-\s*\n',
             'page_numbers': r'página\s+\d+\s+de\s+\d+',
             'headers_footers': r'^.*?\|.*?\|.*?$',
             'control_chars': r'[\x00-\x1F\x7F-\x9F]',
@@ -87,13 +90,11 @@ class TextCleaner:
         }
     
     def normalize_text(self, text: str) -> str:
-        """Normaliza el texto eliminando acentos y convirtiendo a minúsculas."""
         text = text.lower()
         text = unicodedata.normalize('NFKD', text).encode('ASCII', 'ignore').decode('utf-8')
         return text
     
     def remove_special_chars(self, text: str) -> str:
-        """Elimina caracteres especiales y mantiene solo letras, números y puntuación básica."""
         text = re.sub(r'[^\w\s.,!?;:¿¡]', ' ', text)
         text = re.sub(self.pdf_patterns['special_chars'], ' ', text)
         text = re.sub(self.pdf_patterns['control_chars'], '', text)
@@ -102,30 +103,25 @@ class TextCleaner:
         return text
     
     def clean_whitespace(self, text: str) -> str:
-        """Limpia espacios en blanco múltiples y saltos de línea."""
         text = re.sub(self.pdf_patterns['multiple_spaces'], ' ', text)
         text = text.strip()
         return text
     
     def remove_page_numbers(self, text: str) -> str:
-        """Elimina números de página y encabezados/pies de página comunes."""
         text = re.sub(r'\b\d+\s*$', '', text)
         text = re.sub(self.pdf_patterns['headers_footers'], '', text, flags=re.MULTILINE)
         text = re.sub(self.pdf_patterns['page_numbers'], '', text, flags=re.IGNORECASE)
         return text
     
     def remove_section_headers(self, text: str) -> str:
-        """Elimina encabezados de sección comunes."""
         return re.sub(self.pdf_patterns['section_headers'], '', text, flags=re.MULTILINE | re.IGNORECASE)
     
     def fix_broken_words(self, text: str) -> str:
-        """Corrige palabras rotas en el texto."""
         text = re.sub(self.pdf_patterns['broken_chars'], r'\1', text)
         text = re.sub(self.pdf_patterns['line_breaks'], '', text)
         return text
     
     def remove_duplicates(self, text: str) -> str:
-        """Elimina líneas duplicadas en el texto."""
         lines = text.split('\n')
         unique_lines = []
         seen = set()
@@ -139,7 +135,6 @@ class TextCleaner:
         return '\n'.join(unique_lines)
     
     def clean_text(self, text: str) -> str:
-        """Aplica todas las transformaciones de limpieza al texto."""
         text = self.normalize_text(text)
         text = self.fix_broken_words(text)
         text = self.remove_special_chars(text)
@@ -156,38 +151,55 @@ class RAGSystem:
         self.embeddings = None
         self.pdf_sources = []
         self.text_cleaner = TextCleaner()
+        
         try:
-            self.model = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.info("SentenceTransformer model loaded successfully")
+            # Inicializar Cohere para embeddings
+            self.co = cohere.Client(COHERE_API_KEY)
+            logger.info("Cohere client initialized successfully for embeddings")
+            
+            # Initialize Pinecone with new syntax
+            self.pc = Pinecone(api_key=PINECONE_API_KEY)
+            
+            # Create Pinecone index if it doesn't exist
+            if INDEX_NAME not in self.pc.list_indexes().names():
+                self.pc.create_index(
+                    name=INDEX_NAME,
+                    dimension=768,  # Dimension for embed-multilingual-v2.0
+                    metric='cosine'
+                )
+            self.index = self.pc.Index(INDEX_NAME)
+            logger.info(f"Connected to Pinecone index: {INDEX_NAME}")
         except Exception as e:
-            logger.error(f"Error loading SentenceTransformer model: {e}")
+            logger.error(f"Error in initialization: {e}")
             raise
     
     def extract_text_from_pdf(self, pdf_path: str) -> str:
-        """Extract and clean text from PDF file using pdfplumber."""
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"PDF file not found at: {pdf_path}")
             
         try:
             print(f"Attempting to open PDF file: {pdf_path}")
-            with pdfplumber.open(pdf_path) as pdf:
-                texts = []
-                for i, page in enumerate(pdf.pages):
-                    print(f"Processing page {i+1}/{len(pdf.pages)}")
-                    page_text = page.extract_text()
-                    if page_text:
-                        cleaned_page = self.text_cleaner.clean_text(page_text)
-                        if cleaned_page.strip():
-                            texts.append(cleaned_page)
-                final_text = " ".join(texts)
-            print(f"Successfully extracted and cleaned text from PDF: {pdf_path}")
-            return final_text
+            with open(pdf_path, 'rb') as file:
+                print("File opened successfully")
+                reader = PyPDF2.PdfReader(file)
+                print(f"PDF reader created. Number of pages: {len(reader.pages)}")
+                
+                cleaned_texts = []
+                for i, page in enumerate(reader.pages):
+                    print(f"Processing page {i+1}/{len(reader.pages)}")
+                    text = page.extract_text()
+                    cleaned_text = self.text_cleaner.clean_text(text)
+                    if cleaned_text.strip():
+                        cleaned_texts.append(cleaned_text)
+                
+                final_text = " ".join(cleaned_texts)
+                print(f"Successfully extracted and cleaned text from PDF: {pdf_path}")
+                return final_text
         except Exception as e:
-            print(f"Error extracting text from PDF with pdfplumber: {str(e)}")
+            print(f"Error extracting text from PDF: {str(e)}")
             raise
 
     def extract_text_from_csv(self, csv_path: str) -> str:
-        """Extract and clean text from CSV file."""
         if not os.path.exists(csv_path):
             raise FileNotFoundError(f"CSV file not found at: {csv_path}")
             
@@ -196,7 +208,6 @@ class RAGSystem:
             df = pd.read_csv(csv_path)
             print("CSV file opened successfully")
             
-            # Procesar el archivo de precios
             if "Precios.csv" in csv_path:
                 price_texts = []
                 for _, row in df.iterrows():
@@ -223,9 +234,8 @@ class RAGSystem:
         except Exception as e:
             print(f"Error extracting text from CSV: {str(e)}")
             raise
-    
+
     def split_into_chunks(self, text: str, file_name: str) -> List[str]:
-        """Split text into chunks of specified size, respecting sentence boundaries and logical sections."""
         try:
             sections = []
             
@@ -250,7 +260,7 @@ class RAGSystem:
                     
                     if current_size + sentence_size > self.chunk_size and current_chunk:
                         chunk_text = " ".join(current_chunk)
-                        if len(chunk_text.split()) >= 20:  # Mínimo 20 palabras
+                        if len(chunk_text.split()) >= 20:
                             chunks.append(chunk_text)
                             self.pdf_sources.append(file_name)
                         current_chunk = []
@@ -279,119 +289,80 @@ class RAGSystem:
             raise
 
     def generate_embeddings(self, chunks: List[str]) -> np.ndarray:
-        """Generate embeddings for text chunks."""
+        """Generate embeddings using Cohere's embed-multilingual-v2.0 model."""
         try:
-            embeddings = self.model.encode(chunks, convert_to_tensor=True)
-            embeddings = embeddings.cpu().numpy()
+            # Generate embeddings in batches of 96 (Cohere's limit)
+            batch_size = 96
+            all_embeddings = []
+            
+            for i in range(0, len(chunks), batch_size):
+                batch = chunks[i:i + batch_size]
+                response = self.co.embed(
+                    texts=batch,
+                    model='embed-multilingual-v2.0',
+                    input_type='search_document'
+                )
+                all_embeddings.extend(response.embeddings)
+            
+            embeddings = np.array(all_embeddings)
             logger.info(f"Successfully generated embeddings for {len(chunks)} chunks")
             return embeddings
         except Exception as e:
             logger.error(f"Error generating embeddings: {e}")
             raise
 
-    def create_opensearch_index(self):
-        """Create OpenSearch index with vector search capabilities."""
+    def index_chunks(self):
+        """Index chunks and their embeddings in Pinecone."""
         try:
-            mapping = {
-                "settings": {
-                    "index": {
-                        "knn": True,
-                        "knn.algo_param": {
-                            "ef_search": 100
-                        }
-                    }
-                },
-                "mappings": {
-                    "properties": {
-                        "text_chunk": {"type": "text"},
-                        "embedding": {
-                            "type": "knn_vector",
-                            "dimension": 384
-                        },
-                        "source": {"type": "keyword"}
+            # Prepare vectors for indexing
+            vectors = []
+            for i, (chunk, embedding, source) in enumerate(zip(self.chunks, self.embeddings, self.pdf_sources)):
+                vector = {
+                    'id': str(i),
+                    'values': embedding.tolist(),
+                    'metadata': {
+                        'text': chunk,
+                        'source': source
                     }
                 }
-            }
-
-            response = requests.put(
-                f"{OPENSEARCH_HOST}/{INDEX_NAME}",
-                headers={"Content-Type": "application/json"},
-                data=json.dumps(mapping),
-                auth=(OPENSEARCH_USERNAME, OPENSEARCH_PASSWORD)
-            )
+                vectors.append(vector)
             
-            if response.status_code not in [200, 400]:
-                raise Exception(f"Failed to create index: {response.text}")
+            # Index in batches of 100
+            batch_size = 100
+            for i in range(0, len(vectors), batch_size):
+                batch = vectors[i:i + batch_size]
+                self.index.upsert(vectors=batch)
             
-            logger.info("Successfully created OpenSearch index")
+            logger.info(f"Successfully indexed {len(vectors)} vectors in Pinecone")
         except Exception as e:
-            logger.error(f"Error creating OpenSearch index: {e}")
-            raise
-
-    def index_chunks(self):
-        """Index chunks and their embeddings in OpenSearch."""
-        try:
-            bulk_data = []
-            for i, (chunk, embedding, source) in enumerate(zip(self.chunks, self.embeddings, self.pdf_sources)):
-                bulk_data.append({
-                    "index": {
-                        "_index": INDEX_NAME,
-                        "_id": str(i)
-                    }
-                })
-                bulk_data.append({
-                    "text_chunk": chunk,
-                    "embedding": embedding.tolist(),
-                    "source": source
-                })
-
-            response = requests.post(
-                f"{OPENSEARCH_HOST}/_bulk",
-                headers={"Content-Type": "application/json"},
-                data="\n".join(json.dumps(item) for item in bulk_data) + "\n",
-                auth=(OPENSEARCH_USERNAME, OPENSEARCH_PASSWORD)
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"Failed to index chunks: {response.text}")
-
-            logger.info(f"Successfully indexed {len(self.chunks)} chunks")
-        except Exception as e:
-            logger.error(f"Error indexing chunks: {e}")
+            logger.error(f"Error indexing chunks in Pinecone: {e}")
             raise
 
     def search_similar_chunks(self, query: str, k: int = 5) -> List[Tuple[str, str]]:
-        """Search for similar chunks using OpenSearch kNN search."""
+        """Search for similar chunks using Pinecone."""
         try:
-            query_embedding = self.model.encode([query], convert_to_tensor=False)[0].tolist()
-            search_body = {
-                "size": k,
-                "query": {
-                    "knn": {
-                        "embedding": {
-                            "vector": query_embedding,
-                            "k": k
-                        }
-                    }
-                }
-            }
-
-            response = requests.post(
-                f"{OPENSEARCH_HOST}/{INDEX_NAME}/_search",
-                headers={"Content-Type": "application/json"},
-                data=json.dumps(search_body),
-                auth=(OPENSEARCH_USERNAME, OPENSEARCH_PASSWORD)
-            )
-
-            if response.status_code != 200:
-                raise Exception(f"Search failed: {response.text}")
-
-            hits = response.json()["hits"]["hits"]
-            results = [(hit["_source"]["text_chunk"], hit["_source"]["source"]) for hit in hits]
+            # Generate query embedding using Cohere
+            query_embedding = self.co.embed(
+                texts=[query],
+                model='embed-multilingual-v2.0',
+                input_type='search_query'
+            ).embeddings[0]
             
+            # Search in Pinecone
+            results = self.index.query(
+                vector=query_embedding,
+                top_k=k,
+                include_metadata=True
+            )
+            
+            # Extract text chunks and sources from results
+            chunks = [(match['metadata']['text'], match['metadata']['source']) 
+                     for match in results['matches']]
+            
+            # Remove duplicates
             unique_results = []
             seen_chunks = set()
-            for chunk, source in results:
+            for chunk, source in chunks:
                 if chunk not in seen_chunks:
                     seen_chunks.add(chunk)
                     unique_results.append((chunk, source))
@@ -400,6 +371,71 @@ class RAGSystem:
             return unique_results
         except Exception as e:
             logger.error(f"Error searching for similar chunks: {e}")
+            raise
+
+    def process_file(self, file_path: str):
+        """Process a single file (PDF or CSV)."""
+        try:
+            file_extension = os.path.splitext(file_path)[1].lower()
+            file_name = os.path.basename(file_path)
+            
+            if file_extension == '.pdf':
+                text = self.extract_text_from_pdf(file_path)
+            elif file_extension == '.csv':
+                text = self.extract_text_from_csv(file_path)
+            else:
+                logger.warning(f"Unsupported file type: {file_extension}")
+                return
+            
+            chunks = self.split_into_chunks(text, file_name)
+            self.chunks.extend(chunks)
+            
+            logger.info(f"Successfully processed file: {file_path}")
+        except Exception as e:
+            logger.error(f"Error processing file {file_path}: {e}")
+            raise
+
+    def initialize(self, data_directory: str):
+        """Initialize the RAG system with multiple files."""
+        try:
+            # Process all PDFs and CSVs in the directory
+            pdf_files = glob.glob(os.path.join(data_directory, "*.pdf"))
+            csv_files = glob.glob(os.path.join(data_directory, "*.csv"))
+            
+            for file_path in pdf_files + csv_files:
+                self.process_file(file_path)
+            
+            if not self.chunks:
+                raise ValueError("No valid files were processed")
+            
+            # Generate embeddings for all chunks
+            self.embeddings = self.generate_embeddings(self.chunks)
+            
+            # Index chunks in Pinecone
+            self.index_chunks()
+            
+            logger.info("RAG system initialized successfully")
+        except Exception as e:
+            logger.error(f"Error initializing RAG system: {e}")
+            raise
+
+    def query(self, question: str) -> str:
+        """Process a query and return the response."""
+        try:
+            # Search for relevant chunks
+            relevant_chunks = self.search_similar_chunks(question)
+            if not relevant_chunks:
+                web_info = search_thebridge_web(question)
+                relevant_chunks.append((web_info, "Fuente externa"))
+            
+            # Build prompt
+            prompt = self.build_prompt(question, relevant_chunks)
+            
+            # Get response from LLM
+            response = self.get_llm_response(prompt)
+            return response
+        except Exception as e:
+            logger.error(f"Error processing query: {e}")
             raise
 
     def build_prompt(self, query: str, relevant_chunks: List[Tuple[str, str]]) -> str:
@@ -417,16 +453,6 @@ class RAGSystem:
 
             Nota importante: "Carreer Readiness" No es un bootcamp. Es un servicio adicional que ayuda a 
             mejorar su empleabilidad mediante asesoramiento.
-
-            Si la información en la base de datos no es suficiente, realiza una búsqueda en la web.
-            IMPORTANTE: Solo puedes buscar en sitios web relacionados con The Bridge School, como:
-            - https://thebridge.tech
-            - https://thebridge.tech/campus-madrid/
-            - https://thebridge.tech/campus-online/
-            - https://thebridge.tech/campus-bilbao/
-            - https://thebridge.tech/campus-valencia/
-            - https://thebridge.tech/quienes-somos/
-            - https://thebridge.tech/bootcamps/
 
             Consulta: {query}
 
@@ -456,7 +482,7 @@ class RAGSystem:
                 prompt=prompt,
                 max_tokens=150,
                 temperature=0.2,
-                k=5,
+                k=0,
                 stop_sequences=[],
                 return_likelihoods='NONE',
                 model='command-r-plus'
@@ -466,66 +492,3 @@ class RAGSystem:
         except Exception as e:
             logger.error(f"Error generating response with Cohere: {e}")
             raise
-
-    def process_file(self, file_path: str):
-        """Process a single file (PDF or CSV)."""
-        try:
-            file_extension = os.path.splitext(file_path)[1].lower()
-            file_name = os.path.basename(file_path)
-            
-            if file_extension == '.pdf':
-                text = self.extract_text_from_pdf(file_path)
-            elif file_extension == '.csv':
-                text = self.extract_text_from_csv(file_path)
-            else:
-                logger.warning(f"Unsupported file type: {file_extension}")
-                return
-            
-            chunks = self.split_into_chunks(text, file_name)
-            self.chunks.extend(chunks)
-            
-            logger.info(f"Successfully processed file: {file_path}")
-        except Exception as e:
-            logger.error(f"Error processing file {file_path}: {e}")
-            raise
-
-    def initialize(self, data_directory: str):
-        """Initialize the RAG system with multiple files."""
-        try:
-            pdf_files = glob.glob(os.path.join(data_directory, "*.pdf"))
-            csv_files = glob.glob(os.path.join(data_directory, "*.csv"))
-            
-            for file_path in pdf_files + csv_files:
-                self.process_file(file_path)
-            
-            if not self.chunks:
-                raise ValueError("No valid files were processed")
-            
-            self.embeddings = self.generate_embeddings(self.chunks)
-            self.create_opensearch_index()
-            self.index_chunks()
-            
-            logger.info("RAG system initialized successfully")
-        except Exception as e:
-            logger.error(f"Error initializing RAG system: {e}")
-            raise
-
-    def query(self, question: str) -> str:
-        """Process a query and return the response."""
-        try:
-            relevant_chunks = self.search_similar_chunks(question)
-            # Manejo de consultas sin información
-            if not relevant_chunks:
-                web_info = search_thebridge_web(question)
-                if web_info:
-                    relevant_chunks.append((web_info, "Fuente externa"))
-                else:
-                    return "No encontré información relevante sobre tu consulta."
-
-            prompt = self.build_prompt(question, relevant_chunks)
-            response = self.get_llm_response(prompt)
-            return response
-        except Exception as e:
-            logger.error(f"Error processing query: {e}")
-            raise
-

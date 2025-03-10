@@ -14,12 +14,10 @@ load_dotenv()
 
 # Configuración de API Keys y credenciales
 CONFIG = {
-    "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
-    "OPENSEARCH_HOST": os.getenv("OPENSEARCH_HOST"),
-    "OPENSEARCH_USERNAME": os.getenv("OPENSEARCH_USERNAME"),
-    "OPENSEARCH_PASSWORD": os.getenv("OPENSEARCH_PASSWORD"),
-    "COHERE_API_KEY": os.getenv("COHERE_API_KEY"),
-    "INDEX_NAME": os.getenv("INDEX_NAME")
+    "COHERE_API_KEY" : os.getenv('COHERE_API_KEY'),
+    "PINECONE_API_KEY" : os.getenv('PINECONE_API_KEY'),
+    "PINECONE_ENVIRONMENT" : os.getenv('PINECONE_ENVIRONMENT'),
+    "INDEX_NAME" : "desafiofinal"
 }
 
 app = FastAPI()
