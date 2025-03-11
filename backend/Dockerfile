@@ -21,6 +21,10 @@ ENV COHERE_API_KEY="8Ur9ffDfdPJqvxC4yTNx2GItkaHrLWcPImOfssz2"
 ENV PINECONE_API_KEY="pcsk_2Q5SR6_RwRvbb2vr3Yi372tm17eCo9CVSrBbsMgCa7QVwoWhFiPDEvqeDwm8KEdggX8zAd"
 ENV PINECONE_ENVIRONMENT="us-east-1"
 ENV INDEX_NAME="desafiofinal"
+ENV BBDD_USERNAME="admin"
+ENV BBDD_PASSWORD="desafiofinal"
+ENV BBDD_HOST="desafio.ct8kyq8mytxu.us-east-2.rds.amazonaws.com"
+ENV BBDD_PORT="3306"
 
 # Exponer el puerto que usa la aplicación
 EXPOSE 5000

@@ -21,7 +21,13 @@ services:
     ports:
       - "5000:5000"
     environment:
-      - COHERE_API_KEY=${COHERE_API_KEY}
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-      - PINECONE_ENVIRONMENT=${PINECONE_ENVIRONMENT}
-      - INDEX_NAME=desafiofinal 
+      - COHERE_API_KEY=8Ur9ffDfdPJqvxC4yTNx2GItkaHrLWcPImOfssz2
+      - PINECONE_API_KEY=pcsk_2Q5SR6_RwRvbb2vr3Yi372tm17eCo9CVSrBbsMgCa7QVwoWhFiPDEvqeDwm8KEdggX8zAd
+      - PINECONE_ENVIRONMENT=us-east-1
+      - PINECONE_HOST=https://desafiofinal-n7162mc.svc.aped-4627-b74a.pinecone.io
+      - INDEX_NAME=desafiofinal
+      - BBDD_USERNAME="admin"
+      - BBDD_PASSWORD="desafiofinal"
+      - BBDD_HOST="desafio.ct8kyq8mytxu.us-east-2.rds.amazonaws.com"
+      - BBDD_PORT=3306
+    
