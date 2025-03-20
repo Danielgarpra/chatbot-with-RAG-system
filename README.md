@@ -1,70 +1,45 @@
-# Getting Started with Create React App
+![image](https://github.com/user-attachments/assets/13e0dd33-1449-49b8-8e93-0b4cbb7adeb6)
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+# Chatbot con IA Generativa para Escuelas de Bootcamps y Masters
 
-## Available Scripts
+Este proyecto es un chatbot basado en **IA Generativa** que permite a potenciales alumnos obtener información instantánea sobre cursos y programas académicos. Implementamos un sistema **RAG (Retrieval-Augmented Generation)** para optimizar la precisión de las respuestas utilizando documentación de la escuela.
 
-In the project directory, you can run:
+## 🛠️ Tecnologías Utilizadas
 
-### `npm start`
+- **Frontend:** React, HTML, CSS
+- **Backend:** Python + FastAPI
+- **Bases de datos:** MySQL (relacional) + Pinecone (vectorial)
+- **IA Generativa:** Cohere como LLM
+- **Infraestructura:** Docker + Google Cloud Run
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## 📌 Características
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+✅ Chatbot basado en IA generativa para responder preguntas en tiempo real.  
+✅ Indexación de información desde PDFs, Excels y Web Scraping con **CrewAI**.  
+✅ Sistema RAG que procesa la información en **Pinecone** para mejorar las respuestas.  
+✅ Almacenamiento de preguntas y respuestas en **MySQL** para análisis posterior.  
+✅ Despliegue escalable en **Google Cloud Run** con contenedores Docker.
 
-### `npm test`
+## ⚙️ Arquitectura del Sistema
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+1️⃣ **Usuario pregunta** en el chatbot.  
+2️⃣ La pregunta se transforma en embeddings y se busca en la base de datos vectorial (**Pinecone**).  
+3️⃣ El modelo **Cohere LLM** procesa la mejor respuesta basada en la información almacenada.  
+4️⃣ La pregunta y respuesta se guardan en **MySQL** para mejorar futuras interacciones.  
+5️⃣ Se muestra la respuesta al usuario en tiempo real.  
 
-### `npm run build`
+## 🚀 Despliegue
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+Para ejecutar el chatbot localmente:
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+```bash
+# Clonar el repositorio
+git clone https://github.com/tu_usuario/chatbot-educacion.git
+cd chatbot-educacion
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+# Construir y correr con Docker
+docker-compose up --build
+```
 
-### `npm run eject`
-
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
-
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
-
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+Para desplegar en **Google Cloud Run**, asegúrate de tener configurado tu proyecto y tus Keys necesarias.
+Al realizarlo tendras que hacer el deploy primero del backend y sustituirlo su url en el frontend para que pueda llamarlo.
