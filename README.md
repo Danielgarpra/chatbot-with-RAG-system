@@ -30,7 +30,8 @@ Este proyecto es un chatbot basado en **IA Generativa** que permite a potenciale
 
 ## 🚀 Despliegue
 
-Para ejecutar el chatbot localmente:
+Para ejecutar el chatbot localmene (asegúrate de tener tus Keys necesarias).
+Tendras que arrancar el backend (python server.py) y el frontend (npm start)
 
 ```bash
 # Clonar el repositorio
@@ -42,6 +43,6 @@ docker-compose up --build
 ```
 
 Para desplegar en **Google Cloud Run**, asegúrate de tener configurado tu proyecto y tus Keys necesarias.
-Al realizarlo tendras que hacer el deploy primero del backend y sustituirlo su url en el frontend para que pueda llamarlo.
+Al realizarlo tendras que hacer el deploy primero del backend y sustituirlo su url en el frontend para que pueda llamarlo, en el archivo ActionProvider.js
 
 Si lo prefiere puede consultarmelo y le facilitaré los recursos.
