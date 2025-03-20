@@ -43,3 +43,5 @@ docker-compose up --build
 
 Para desplegar en **Google Cloud Run**, asegúrate de tener configurado tu proyecto y tus Keys necesarias.
 Al realizarlo tendras que hacer el deploy primero del backend y sustituirlo su url en el frontend para que pueda llamarlo.
+
+Si lo prefiere puede consultarmelo y le facilitaré los recursos.
